@@ -165,7 +165,7 @@
     
     <div class="grid-2">
         <div class="input-group">
-            <label for="faceValue">申購面額 (美金)</label>
+            <label for="faceValue">申購金額 (美金)</label>
             <input type="number" id="faceValue" value="10000" placeholder="例如: 10000" oninput="calculate()">
         </div>
         <div class="input-group">
@@ -176,18 +176,24 @@
     
     <div class="grid-2">
         <div class="input-group">
+            <label for="orderDate">下單日期 (西元年月日)</label>
+            <input type="date" id="orderDate" value="2026-06-18" oninput="calculate()">
+        </div>
+        <div class="input-group">
+            <label for="maturityDate">債券到期日 (西元年月日)</label>
+            <input type="date" id="maturityDate" value="2033-12-31" oninput="calculate()">
+        </div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="input-group">
             <label for="couponRate">票面利息 (%)</label>
             <input type="number" id="couponRate" value="5.123" step="0.001" placeholder="例如: 5.123" oninput="calculate()">
         </div>
         <div class="input-group">
-            <label for="interestCount">可領配息次數 (至到期日)</label>
-            <input type="number" id="interestCount" value="15" placeholder="例如: 15" oninput="calculate()">
+            <label for="previousInterest">前手息 / 手續費 (美金)</label>
+            <input type="number" id="previousInterest" value="69.73" step="0.01" placeholder="例如: 69.73" oninput="calculate()">
         </div>
-    </div>
-    
-    <div class="input-group">
-        <label for="previousInterest">前手息 / 手續費 (美金)</label>
-        <input type="number" id="previousInterest" value="69.73" step="0.01" placeholder="例如: 69.73" oninput="calculate()">
     </div>
 
     <div class="result-box">
@@ -205,19 +211,19 @@
             <span class="result-label">3. 每年配息金額</span>
             <span class="result-value" id="res_annual">0.00 美金</span>
         </div>
-        <div class="result-row">
-            <span class="result-label">4. 持有至到期配息次數</span>
-            <span class="result-value" id="res_count">0 次</span>
+        <div class="result-row" style="background-color: #f0fdf4;">
+            <span class="result-label" style="color: #166534; font-weight: 600;">4. 從資料輸入至到期日為止可領配息次數</span>
+            <span class="result-value" id="res_count" style="color: #166534;">0 次</span>
         </div>
         <div class="result-row">
-            <span class="result-label">5. 持有到期共領配息</span>
+            <span class="result-label">5. 配息總金額</span>
             <span class="result-value" id="res_totalInterest">0.00 美金</span>
         </div>
         <div class="result-row">
-            <span class="result-label">6. 持有至到期共領回 (本金+利息)</span>
+            <span class="result-label">6. 可領回總金額 (本金+利息)</span>
             <span class="result-value" id="res_totalReturn">0.00 美金</span>
         </div>
-        <div class="result-row highlight-row">
+        <div class="highlight-row">
             <span class="result-label">7. 總報酬率</span>
             <span class="result-value" id="res_totalReturnRate">0.00%</span>
         </div>
@@ -239,10 +245,35 @@ function calculate() {
     const faceValue = parseFloat(document.getElementById('faceValue').value) || 0;
     const price = parseFloat(document.getElementById('price').value) || 0;
     const couponRate = parseFloat(document.getElementById('couponRate').value) || 0;
-    const interestCount = parseInt(document.getElementById('interestCount').value) || 0;
     const previousInterest = parseFloat(document.getElementById('previousInterest').value) || 0;
+    
+    const orderDateVal = document.getElementById('orderDate').value;
+    const maturityDateVal = document.getElementById('maturityDate').value;
 
-    // 1. 申購金額 = 【面額 X 市價 / 100 + 前手息】
+    let interestCount = 0;
+
+    // 自動計算配息次數：(債券到期日 - 下單日期) / 6個月，不足6個月不計息
+    if (orderDateVal && maturityDateVal) {
+        const orderDate = new Date(orderDateVal);
+        const maturityDate = new Date(maturityDateVal);
+        
+        if (maturityDate > orderDate) {
+            // 計算總月份差距
+            let months = (maturityDate.getFullYear() - orderDate.getFullYear()) * 12;
+            months += maturityDate.getMonth() - orderDate.getMonth();
+            
+            // 處理日期的天數差距，若到期日的天數小於下單日的天數，扣除不足的一個月
+            if (maturityDate.getDate() < orderDate.getDate()) {
+                months--;
+            }
+            
+            // 每6個月算一次配息，向下取整（不足6個月不計）
+            interestCount = Math.floor(months / 6);
+            if (interestCount < 0) interestCount = 0;
+        }
+    }
+
+    // 1. 申購金額 = 【面額 X 市價 / 100 + 前手息】 （此處面額即輸入的申購金額欄位）
     const purchaseAmount = (faceValue * price / 100) + previousInterest;
 
     // 2. 每半年配息 = 面額 * 票面利息(%) / 2
@@ -251,14 +282,10 @@ function calculate() {
     // 3. 每年配息 = 每半年配息 * 2
     const annual = semiAnnual * 2;
 
-    // 4. 持有到期共領配息次數
-    const count = interestCount;
+    // 5. 配息總金額 = 每半年配息 * 次數
+    const totalInterest = semiAnnual * interestCount;
 
-    // 5. 持有到期共領配息 = 每半年配息 * 次數
-    // 備註：照圖中公式 256.15 * 15 = 3842.25，但圖片直接寫 3840，此處採取精準數學計算
-    const totalInterest = semiAnnual * count;
-
-    // 6. 持有至到期共領回 = 配息總額 + 面額
+    // 6. 可領回總金額 = 配息總額 + 面額
     const totalReturn = totalInterest + faceValue;
 
     // 7. 總報酬率 = 配息總額 / 申購金額 * 100%
@@ -271,7 +298,7 @@ function calculate() {
     document.getElementById('res_purchaseAmount').innerText = purchaseAmount.toFixed(2) + ' 美金';
     document.getElementById('res_semiAnnual').innerText = semiAnnual.toFixed(2) + ' 美金';
     document.getElementById('res_annual').innerText = annual.toFixed(2) + ' 美金';
-    document.getElementById('res_count').innerText = count + ' 次';
+    document.getElementById('res_count').innerText = interestCount + ' 次';
     document.getElementById('res_totalInterest').innerText = totalInterest.toFixed(2) + ' 美金';
     document.getElementById('res_totalReturn').innerText = totalReturn.toFixed(2) + ' 美金';
     document.getElementById('res_totalReturnRate').innerText = totalReturnRate.toFixed(2) + '%';
