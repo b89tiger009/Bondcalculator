@@ -132,6 +132,22 @@
             font-size: 18px;
             font-weight: bold;
         }
+        .sub-highlight-row {
+            background-color: #f0fdf4;
+            margin: 5px -20px;
+            padding: 12px 20px;
+            border-top: 1px solid #bbf7d0;
+            border-bottom: 1px solid #bbf7d0 !important;
+        }
+        .sub-highlight-row .result-label {
+            color: #166534;
+            font-weight: bold;
+        }
+        .sub-highlight-row .result-value {
+            color: #16a34a;
+            font-size: 18px;
+            font-weight: bold;
+        }
         .risk-box {
             margin-top: 20px;
             background-color: #fff7ed;
@@ -188,7 +204,7 @@
     <div class="grid-2">
         <div class="input-group">
             <label for="orderDate">下單日期 (西元年月日)</label>
-            <input type="date" id="orderDate" value="2026-06-18" oninput="calculate()">
+            <input type="date" id="orderDate" value="2026-01-01" oninput="calculate()">
         </div>
         <div class="input-group">
             <label for="maturityDate">債券到期日 (西元年月日)</label>
@@ -197,7 +213,7 @@
     </div>
     
     <div class="input-group">
-        <label for="previousInterest">前手息 (美金)</label>
+        <label for="previousInterest">前手息 / 手續費 (美金)</label>
         <input type="number" id="previousInterest" value="69.73" step="0.01" placeholder="例如: 69.73" oninput="calculate()">
     </div>
 
@@ -232,17 +248,25 @@
             <span class="result-label">4. 從資料輸入至到期日為止可領配息次數</span>
             <span class="result-value" id="res_count">0 次</span>
         </div>
+        <div class="result-row" style="background-color: #f8fafc; border-top: 1px dashed #cbd5e1;">
+            <span class="result-label">5. 持有年數</span>
+            <span class="result-value" id="res_holdingYears">0.00 年</span>
+        </div>
         <div class="result-row">
-            <span class="result-label">5. 配息總金額</span>
+            <span class="result-label">6. 配息總金額</span>
             <span class="result-value" id="res_totalInterest">0.00 美金</span>
         </div>
         <div class="result-row">
-            <span class="result-label">6. 可領回總金額 (本金+利息)</span>
+            <span class="result-label">7. 可領回總金額 (本金+利息)</span>
             <span class="result-value" id="res_totalReturn">0.00 美金</span>
         </div>
         <div class="highlight-row">
-            <span class="result-label">7. 總報酬率</span>
+            <span class="result-label">8. 總報酬率</span>
             <span class="result-value" id="res_totalReturnRate">0.00%</span>
+        </div>
+        <div class="sub-highlight-row">
+            <span class="result-label">9. 預期殖利率 (年化)</span>
+            <span class="result-value" id="res_expectedYield">0.00%</span>
         </div>
     </div>
 
@@ -271,8 +295,8 @@ function calculate() {
     // 1. 實付申購金額 = 【面額 X 成交價格 / 100 + 前手息】
     const purchaseAmount = (faceValue * price / 100) + previousInterest;
 
-    // ↳ 參考市值 = 【面額 X 參考價格 / 100 + 前手息】 (按標準債券市值計算邏輯)
-    const refMarketValue = (faceValue * refPrice / 100) + previousInterest;
+    // ↳ 修正後公式：參考市值 = 參考價格 * 100
+    const refMarketValue = refPrice * 100;
 
     // ↳ 參考損益 = 參考市值 - 實付申購金額
     const refProfitLoss = refMarketValue - purchaseAmount;
@@ -283,30 +307,35 @@ function calculate() {
     // 3. 每年配息 = 每半年配息 * 2
     const annual = semiAnnual * 2;
 
-    // ↳ 累計配息計算：round(( 今天日期 - 下單日期 ) / 6個月, 0) * 每半年配息金額
+    // ↳ 累計配息計算
     let accumulatedInterest = 0;
     if (orderDateVal) {
         const orderDate = new Date(orderDateVal);
-        const today = new Date(); // 今天日期
+        const today = new Date();
         
         let diffMonths = (today.getFullYear() - orderDate.getFullYear()) * 12;
         diffMonths += today.getMonth() - orderDate.getMonth();
-        // 補足天數微調
         if (today.getDate() < orderDate.getDate()) {
             diffMonths--;
         }
-        // 算出期數並四捨五入到整數
         const period = Math.round(diffMonths / 6);
         accumulatedInterest = (period > 0 ? period : 0) * semiAnnual;
     }
 
-    // 4. 自動邏輯：精算 (債券到期日 - 下單日期) / 6個月，不足6個月不計息
+    // 4. 配息次數與 5. 持有年數邏輯
     let interestCount = 0;
+    let holdingYears = 0;
     if (orderDateVal && maturityDateVal) {
         const orderDate = new Date(orderDateVal);
         const maturityDate = new Date(maturityDateVal);
         
         if (maturityDate > orderDate) {
+            // 計算天數差距
+            const diffTime = Math.abs(maturityDate - orderDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            holdingYears = diffDays / 365;
+
+            // 月份差計算配息次數
             let months = (maturityDate.getFullYear() - orderDate.getFullYear()) * 12;
             months += maturityDate.getMonth() - orderDate.getMonth();
             if (maturityDate.getDate() < orderDate.getDate()) {
@@ -317,29 +346,35 @@ function calculate() {
         }
     }
 
-    // 5. 配息總金額 = 每半年配息 * 次數
+    // 6. 配息總金額 = 每半年配息 * 次數
     const totalInterest = semiAnnual * interestCount;
 
-    // 6. 可領回總金額 = 配息總額 + 面額
+    // 7. 可領回總金額 = 配息總額 + 面額
     const totalReturn = totalInterest + faceValue;
 
-    // 7. 總報酬率 = 配息總額 / 申購金額 * 100%
+    // 8. 總報酬率 = 配息總額 / 申購金額 * 100%
     let totalReturnRate = 0;
     if (purchaseAmount > 0) {
         totalReturnRate = (totalInterest / purchaseAmount) * 100;
+    }
+
+    // 9. 預期殖利率 (年化殖利率) = 總報酬率 / 持有年數
+    let expectedYield = 0;
+    if (holdingYears > 0) {
+        expectedYield = totalReturnRate / holdingYears;
     }
 
     // 渲染至網頁中
     document.getElementById('res_purchaseAmount').innerText = purchaseAmount.toFixed(2) + ' 美金';
     document.getElementById('res_refMarketValue').innerText = refMarketValue.toFixed(2) + ' 美金';
     
-    // 損益著色處理（正數紅、負數綠/或一般）
+    // 損益顏色
     const refPL_element = document.getElementById('res_refProfitLoss');
-    refPL_element.innerText = refProfitLoss.toFixed(2) + ' 美金';
+    refPL_element.innerText = (refProfitLoss >= 0 ? '+' : '') + refProfitLoss.toFixed(2) + ' 美金';
     if (refProfitLoss > 0) {
-        refPL_element.style.color = '#dc2626'; // 紅色
+        refPL_element.style.color = '#dc2626';
     } else if (refProfitLoss < 0) {
-        refPL_element.style.color = '#16a34a'; // 綠色
+        refPL_element.style.color = '#16a34a';
     } else {
         refPL_element.style.color = '#0f172a';
     }
@@ -348,9 +383,11 @@ function calculate() {
     document.getElementById('res_semiAnnual').innerText = semiAnnual.toFixed(2) + ' 美金';
     document.getElementById('res_annual').innerText = annual.toFixed(2) + ' 美金';
     document.getElementById('res_count').innerText = interestCount + ' 次';
+    document.getElementById('res_holdingYears').innerText = holdingYears.toFixed(2) + ' 年';
     document.getElementById('res_totalInterest').innerText = totalInterest.toFixed(2) + ' 美金';
     document.getElementById('res_totalReturn').innerText = totalReturn.toFixed(2) + ' 美金';
     document.getElementById('res_totalReturnRate').innerText = totalReturnRate.toFixed(2) + '%';
+    document.getElementById('res_expectedYield').innerText = expectedYield.toFixed(2) + '%';
 }
 
 // 初始執行一次計算
